@@ -1,0 +1,44 @@
+These few lines of Elisp simplify the testing of Clojure and
+ClojureScript libraries with Org Babel (ob-clojure.el).
+
+Just load =ob-clojure-literate-extras.el= file with =load-file= and
+you will be able to run code blocks like these:
+
+#+begin_src clojure :deps '(("org.clojure/core.memoize" "1.0.257"))
+(require '[clojure.core.memoize :as m])
+
+(def id (m/ttl
+	 #(do (Thread/sleep 1000) (identity %))
+	 :ttl/threshold 3000))
+
+(defmacro time-ms [expr]
+  `(let [start# (. System (nanoTime))]
+     ~expr
+     (/ (double (- (. System (nanoTime)) start#) ) (. Math (pow 10 6))))
+  )
+
+(time-ms (id 1))
+(time-ms (id 1))
+
+(Thread/sleep 3000)
+
+(time-ms (id 1))
+#+end_src
+
+#+begin_src clojurescript :deps '(("io.github.ruffnext/cljs-http" "0.1.47")) :shadowcljs-type "browser-repl"
+(ns example.core
+  (:require-macros [cljs.core.async.macros :refer [go]])
+  (:require [cljs-http.client :as http]
+     [cljs.core.async :refer [<!]]))
+
+(def result (atom {}))
+(go (let [response (<! (http/get "https://api.github.com/users"
+                                 {:with-credentials? false
+                                  :query-params {"since" 135}}))]
+      (swap! result #(conj %
+                           [:status (:status response)]
+                           [:login (map :login (:body response))]))))
+
+
+@result
+#+end_src
