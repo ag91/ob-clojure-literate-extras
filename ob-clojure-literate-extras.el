@@ -1,11 +1,13 @@
+(require 'dash)
+(require 's)
+
 ;; support a :deps header in ob-clojure blocks (can't work for bb and nbb, because they manage deps natively)
-(defcustom my/cider-extra-deps nil "Extra deps to add to cider startup")
+(defcustom ob-clojure-extras-cider-extra-deps nil "Extra deps to add to cider startup")
 
-(defun my/cider-add-extra-deps (orig-fun &rest args)
-  (append (apply orig-fun args) my/cider-extra-deps))
+(defun ob-clojure-extras-cider-add-extra-deps (orig-fun &rest args)
+  (append (apply orig-fun args) ob-clojure-extras-cider-extra-deps))
 
-
-(advice-add 'cider--jack-in-required-dependencies :around #'my/cider-add-extra-deps)
+(advice-add 'cider--jack-in-required-dependencies :around #'ob-clojure-extras-cider-add-extra-deps)
 
 (defun ob-clojure-eval-with-cider (expanded params)
   "Evaluate EXPANDED code block with PARAMS using cider."
@@ -14,7 +16,7 @@
   (let ((connection (cider-current-connection (cdr (assq :target params))))
         (result-params (cdr (assq :result-params params)))
         result0)
-    (unless connection (let ((my/cider-extra-deps (alist-get :deps params))) (sesman-start-session 'CIDER)))
+    (unless connection (let ((ob-clojure-extras-cider-extra-deps (alist-get :deps params))) (sesman-start-session 'CIDER)))
     (if (not connection)
         ;; Display in the result instead of using `user-error'
         (setq result0 "Please reevaluate when nREPL is connected")
@@ -35,7 +37,7 @@
                                      (replace-regexp-in-string "nil" "" (or r "")))
                                    result0)))))))
   ;;; begin - make ob-clojure work with a no project clojurescript shadow-cljs session with deps
-(defun my/cider-run-projectless-cljs-repl (&optional repl-type deps extras)
+(defun ob-clojure-extras-cider-run-projectless-cljs-repl (&optional repl-type deps extras)
   "Start a projectless cljs REPL running on REPL-TYPE with DEPS.
 Any other shadow-cljs options goes verbatim in EXTRAS.
 DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"))"
@@ -70,14 +72,14 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
       (run-with-idle-timer 10 nil (lambda () (shell-command "rm shadow-cljs.edn")))
       repl-type)))
 
-(defun my/setup-shadow-cljs-project-if-possible (orig-fun &rest args)
+(defun ob-clojure-extras-setup-shadow-cljs-project-if-possible (orig-fun &rest args)
   (if-let* ((headers (nth 1 args))
             (_ (equal "cljs" (alist-get :target headers)))
             (cider-default-cljs-repl 'shadow)
             (cider-shadow-default-options
-             (my/cider-run-projectless-cljs-repl (alist-get :shadowcljs-type headers)
-                                                 (alist-get :deps headers)
-                                                 (alist-get :shadowcljs-extra headers))))
+             (ob-clojure-extras-cider-run-projectless-cljs-repl (alist-get :shadowcljs-type headers)
+                                                                (alist-get :deps headers)
+                                                                (alist-get :shadowcljs-extra headers))))
       (progn
         (while (not (car-safe (nrepl-extract-ports (cider--file-path "."))))
           (message "Waiting for shadow-cljs to connect...")
@@ -90,5 +92,5 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
         (apply orig-fun args))
     (apply orig-fun args)))
 
-(advice-add 'ob-clojure-eval-with-cider :around #'my/setup-shadow-cljs-project-if-possible)
-  ;;; end
+(advice-add 'ob-clojure-eval-with-cider :around #'ob-clojure-extras-setup-shadow-cljs-project-if-possible)
+ ;;; end
