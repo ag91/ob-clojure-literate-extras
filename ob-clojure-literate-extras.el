@@ -6,6 +6,7 @@
 
 
 (advice-add 'cider--jack-in-required-dependencies :around #'my/cider-add-extra-deps)
+
 (defun ob-clojure-eval-with-cider (expanded params)
   "Evaluate EXPANDED code block with PARAMS using cider."
   (condition-case nil (require 'cider)
@@ -34,8 +35,9 @@
                                      (replace-regexp-in-string "nil" "" (or r "")))
                                    result0)))))))
   ;;; begin - make ob-clojure work with a no project clojurescript shadow-cljs session with deps
-(defun my/cider-run-projectless-cljs-repl (&optional repl-type deps)
+(defun my/cider-run-projectless-cljs-repl (&optional repl-type deps extras)
   "Start a projectless cljs REPL running on REPL-TYPE with DEPS.
+Any other shadow-cljs options goes verbatim in EXTRAS.
 DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"))"
   (when (and
          ;; I have available shadowcljs
@@ -59,7 +61,10 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
                                                    deps))
                                     "]")))
       (with-temp-file "shadow-cljs.edn"
-        (insert (concat "{:dependencies " deps-as-vectors "}")))
+        (insert (concat "{\n:dependencies " deps-as-vectors
+                        "\n"
+                        extras
+                        "}")))
       (async-shell-command (concat "shadow-cljs " repl-type))
       ;; in a bit get rid of the temporary shadow-cljs.edn
       (run-with-idle-timer 10 nil (lambda () (shell-command "rm shadow-cljs.edn")))
@@ -71,7 +76,8 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
             (cider-default-cljs-repl 'shadow)
             (cider-shadow-default-options
              (my/cider-run-projectless-cljs-repl (alist-get :shadowcljs-type headers)
-                                                 (alist-get :deps headers))))
+                                                 (alist-get :deps headers)
+                                                 (alist-get :shadowcljs-extra headers))))
       (progn
         (while (not (car-safe (nrepl-extract-ports (cider--file-path "."))))
           (message "Waiting for shadow-cljs to connect...")
