@@ -9,6 +9,10 @@
 
 (advice-add 'cider--jack-in-required-dependencies :around #'ob-clojure-extras-cider-add-extra-deps)
 
+(add-to-list
+ 'org-babel-header-args:clojure
+ '(deps . :any))
+
 (defun ob-clojure-eval-with-cider (expanded params)
   "Evaluate EXPANDED code block with PARAMS using cider."
   (condition-case nil (require 'cider)
@@ -54,9 +58,10 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
                          (s-ends-with-p ".clj" it))
                      (directory-files (or (ignore-errors (project-root (project-current)))
                                           default-directory)))))
-    (let* ((repl-type (or
-                       repl-type
-                       (completing-read "Shadow-cljs REPL type:" '("browser-repl" "node-repl") nil t)))
+    (let* ((repl-type (--> (or
+                            repl-type
+                            (completing-read "Shadow-cljs REPL type:" '("browser-repl" "node-repl") nil t))
+                           (if (stringp it) it (symbol-name it))))
            (deps-as-vectors (concat "["
                                     (s-join "\n"
                                             (--map (concat "[" (nth 0 it) " \"" (nth 1 it) "\"]")
@@ -93,4 +98,68 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
     (apply orig-fun args)))
 
 (advice-add 'ob-clojure-eval-with-cider :around #'ob-clojure-extras-setup-shadow-cljs-project-if-possible)
+
+(add-to-list
+ 'org-babel-header-args:clojurescript
+ '(shadowcljs-type (browser-repl node-repl)))
+
+(add-to-list
+ 'org-babel-header-args:clojurescript
+ '(deps . :any))
  ;;; end
+
+;; Also add an utility to insert clj dependencies in the right format digested by this extension
+
+(defun ob-clojure-extras-get-clojars-artifacts! ()
+  "Returns a vector of [[some/lib \"0.1\"]...]."
+  (let ((filename (concat (temporary-file-directory) "all-jars.clj.gz")))
+    (with-demoted-errors
+        (url-copy-file "https://clojars.org/repo/all-jars.clj.gz" filename)
+      (s-lines (shell-command-to-string (format "zcat %s" filename))))))
+
+(defun ob-clojure-extras-get-mvn-artifacts! ()
+  "All the artifacts under org.clojure in mvn central"
+  (-distinct
+   (-flatten
+    (-map
+     (lambda (group-id)
+       (let* ((search-prefix "https://search.maven.org/solrsearch/select?q=g:%22")
+              (search-suffix "%22+AND+p:%22jar%22&rows=2000&wt=json")
+              (search-url (concat search-prefix group-id search-suffix))
+              (json (with-current-buffer
+                        (url-retrieve-synchronously search-url)
+                      (goto-char url-http-end-of-headers)
+                      (delete-region
+                       (point-min)
+                       (point))
+                      (save-excursion
+                        (let
+                            ((json-object-type 'plist)
+                             (json-array-type 'list))
+                          (goto-char
+                           (point-min))
+                          (json-read))))))
+         (--> json
+
+              (plist-get it :response)
+              (plist-get it :docs)
+              (--keep (concat "[" (plist-get it :g) "/" (plist-get it :a) " \"" (plist-get it :latestVersion) "\"" "]") it))))
+     '("org.clojure" "com.cognitect")))))
+
+(defvar clj-deps-cache nil "xx")
+
+(defun ob-clojure-extras-get-available-clj-deps (&optional force)
+  (if (and (not force) clj-deps-cache)
+      clj-deps-cache
+    (setq clj-deps-cache (append (ob-clojure-extras-get-clojars-artifacts!) (ob-clojure-extras-get-mvn-artifacts!)))))
+
+(defun ob-clojure-extras-insert-clj-dep ()
+  (interactive)
+  (insert
+   (format
+    "'%S" ;; adding the quote to save user's time
+    (--map
+     (--map
+      (if (symbolp it) (symbol-name it) it)
+      (read (s-replace-all '(("[" . "(") ("]" . ")")) it))) ;; converting EDN vectors into strings
+     (completing-read-multiple "Add Clj dep:" (ob-clojure-extras-get-available-clj-deps))))))
