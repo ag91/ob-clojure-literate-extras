@@ -13,33 +13,22 @@
  'org-babel-header-args:clojure
  '(deps . :any))
 
-(defun ob-clojure-eval-with-cider (expanded params)
-  "Evaluate EXPANDED code block with PARAMS using cider."
-  (condition-case nil (require 'cider)
-    (user-error "cider not available"))
-  (let ((connection (cider-current-connection (cdr (assq :target params))))
-        (result-params (cdr (assq :result-params params)))
-        result0)
+
+(defun ob-clojure-eval-with-cider (expanded params &optional cljs-p)
+  "Evaluate EXPANDED code block using cider.
+When CLJS-P is non-nil, use a cljs connection instead of clj.
+The PARAMS from Babel are not used in this function."
+  (org-require-package 'cider "Cider")
+  (let ((connection (cider-current-connection (if cljs-p "cljs" "clj"))))
     (unless connection (let ((ob-clojure-extras-cider-extra-deps (alist-get :deps params))) (sesman-start-session 'CIDER)))
     (if (not connection)
-        ;; Display in the result instead of using `user-error'
-        (setq result0 "Please reevaluate when nREPL is connected")
-      (ob-clojure-with-temp-expanded expanded params
-        (let ((response (nrepl-sync-request:eval exp connection)))
-          (push (or (nrepl-dict-get response "root-ex")
-                    (nrepl-dict-get response "ex")
-                    (nrepl-dict-get
-                     response (if (or (member "output" result-params)
-                                      (member "pp" result-params))
-                                  "out"
-                                "value")))
-                result0)))
-      (ob-clojure-string-or-list
-       ;; Filter out s-expressions that return nil (string "nil"
-       ;; from nrepl eval) or comment forms (actual nil from nrepl)
-       (reverse (delete "" (mapcar (lambda (r)
-                                     (replace-regexp-in-string "nil" "" (or r "")))
-                                   result0)))))))
+	;; Display in the result instead of using `user-error'
+        "Please reevaluate when nREPL is connected"
+      (let ((response (nrepl-sync-request:eval expanded connection)))
+        (or (nrepl-dict-get response "root-ex")
+	    (nrepl-dict-get response "ex")
+	    (nrepl-dict-get response "out"))))))
+
   ;;; begin - make ob-clojure work with a no project clojurescript shadow-cljs session with deps
 (defun ob-clojure-extras-cider-run-projectless-cljs-repl (&optional repl-type deps extras)
   "Start a projectless cljs REPL running on REPL-TYPE with DEPS.
@@ -163,3 +152,5 @@ DEPS needs to be something like '((\"foo/bar\" \"0.0.1\") (\"foo/baz\" \"0.0.2\"
       (if (symbolp it) (symbol-name it) it)
       (read (s-replace-all '(("[" . "(") ("]" . ")")) it))) ;; converting EDN vectors into strings
      (completing-read-multiple "Add Clj dep:" (ob-clojure-extras-get-available-clj-deps))))))
+
+(provide 'ob-clojure-literate-extras)
